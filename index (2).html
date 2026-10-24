@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="つつきカウンター">
+<meta name="theme-color" content="#6750a4">
+<title>つつきカウンター</title>
+<style>
+  :root { --fg:#1d1b20; --sub:#79747e; --bg:#fef7ff; --accent:#6750a4; --track:#e6e0e9; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg:#e6e0e9; --sub:#938f99; --bg:#141218; --accent:#d0bcff; --track:#36343b; }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  main { min-height:100%; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); gap:20px; text-align:center; }
+  #count { font-size:112px; font-weight:700; line-height:1; transition: transform .22s ease-out; }
+  #count.pulse { transform: scale(1.15); }
+  .hint { color:var(--sub); font-size:15px; margin:0; }
+  .box { width:100%; max-width:340px; text-align:left; }
+  .label { font-size:13px; color:var(--sub); margin-bottom:6px; }
+  .meter { height:10px; border-radius:6px; background:var(--track); overflow:hidden; }
+  #bar { height:100%; width:0; background:#f59e0b; border-radius:6px; }
+  #bar.cool { background:var(--accent); }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  button { font:inherit; font-size:16px; padding:12px 20px; border-radius:24px; border:1px solid var(--sub);
+    background:transparent; color:var(--fg); }
+  button.primary { background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:600; }
+  #msg { color:#d9534f; font-size:14px; min-height:20px; margin:0; }
+</style>
+</head>
+<body>
+<main>
+  <div id="count">0</div>
+  <p class="hint">スマホの上部を指でトントンと突いてね</p>
+  <button id="start" class="primary">センサーを許可して開始</button>
+  <p id="msg"></p>
+
+  <div class="box">
+    <div class="label" id="mag">現在の角速度: 0.0 rad/s</div>
+    <div class="meter"><div id="bar"></div></div>
+  </div>
+
+  <div class="box">
+    <div class="label">感度しきい値: <span id="thv">6.0</span> rad/s</div>
+    <input id="th" type="range" min="2" max="12" step="0.5" value="6">
+    <div class="label" style="font-size:12px;margin-top:4px">下げると敏感に、上げると誤反応しにくくなります</div>
+  </div>
+
+  <button id="reset">リセット</button>
+</main>
+
+<script>
+(function () {
+  var count = 0, threshold = 6, cooling = false, running = false;
+  var COOLDOWN_MS = 350, DEG2RAD = Math.PI / 180;
+
+  var elCount = document.getElementById('count');
+  var elStart = document.getElementById('start');
+  var elMsg = document.getElementById('msg');
+  var elMag = document.getElementById('mag');
+  var elBar = document.getElementById('bar');
+  var elTh = document.getElementById('th');
+  var elThv = document.getElementById('thv');
+
+  try {
+    var saved = parseFloat(localStorage.getItem('threshold'));
+    if (saved >= 2 && saved <= 12) { threshold = saved; elTh.value = saved; elThv.textContent = saved.toFixed(1); }
+  } catch (e) {}
+
+  elTh.addEventListener('input', function () {
+    threshold = parseFloat(elTh.value);
+    elThv.textContent = threshold.toFixed(1);
+    try { localStorage.setItem('threshold', String(threshold)); } catch (e) {}
+  });
+
+  document.getElementById('reset').addEventListener('click', function () {
+    count = 0; elCount.textContent = '0';
+  });
+
+  function poke() {
+    count++;
+    cooling = true;
+    elCount.textContent = String(count);
+    elCount.classList.add('pulse');
+    setTimeout(function () { elCount.classList.remove('pulse'); }, 220);
+    elBar.classList.add('cool');
+    if (navigator.vibrate) navigator.vibrate(30);
+    setTimeout(function () { cooling = false; elBar.classList.remove('cool'); }, COOLDOWN_MS);
+  }
+
+  var gotData = false;
+  function onMotion(e) {
+    var r = e.rotationRate;
+    if (!r || r.alpha == null) return;
+    gotData = true;
+    var x = (r.beta || 0) * DEG2RAD, y = (r.gamma || 0) * DEG2RAD, z = (r.alpha || 0) * DEG2RAD;
+    var mag = Math.sqrt(x * x + y * y + z * z);
+    elMag.textContent = '現在の角速度: ' + mag.toFixed(1) + ' rad/s';
+    elBar.style.width = Math.min(100, (mag / (threshold * 1.5)) * 100) + '%';
+    if (mag > threshold && !cooling) poke();
+  }
+
+  function begin() {
+    window.addEventListener('devicemotion', onMotion);
+    running = true;
+    elStart.style.display = 'none';
+    elMsg.textContent = '';
+    setTimeout(function () {
+      if (!gotData) elMsg.textContent = 'センサーの値が届きません。HTTPSで開いているか、端末のモーションセンサー設定を確認してください。';
+    }, 2500);
+  }
+
+  elStart.addEventListener('click', function () {
+    if (running) return;
+    if (typeof DeviceMotionEvent === 'undefined') {
+      elMsg.textContent = 'このブラウザはモーションセンサーに対応していません。';
+      return;
+    }
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+      DeviceMotionEvent.requestPermission().then(function (s) {
+        if (s === 'granted') begin();
+        else elMsg.textContent = '許可されませんでした。Safariを一度閉じて開き直し、もう一度お試しください。';
+      }).catch(function (err) {
+        elMsg.textContent = '許可の取得に失敗しました: ' + err;
+      });
+    } else {
+      begin();
+    }
+  });
+})();
+</script>
+</body>
+</html>
