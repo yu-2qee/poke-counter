@@ -84,6 +84,11 @@
   .cat .b i { display:block; height:100%; background:var(--accent); border-radius:4px; }
   .form { display:grid; gap:8px; width:100%; max-width:420px; text-align:left; background:var(--card); border-radius:14px; padding:12px; }
   .form2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .form > *, .form2 > * { min-width:0; }
+  input, select { min-width:0; max-width:100%; }
+  input[type=date], input[type=time] { display:block; height:44px; -webkit-appearance:none; appearance:none; text-align:left; }
+  input[type=date]::-webkit-date-and-time-value, input[type=time]::-webkit-date-and-time-value { text-align:left; min-height:1.2em; }
+  @media (max-width:380px) { .form2 { grid-template-columns:minmax(0,1fr); } }
 
   nav { position:fixed; left:0; right:0; bottom:0; display:flex; background:var(--bg); border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom,0px); height:calc(48px + env(safe-area-inset-bottom,0px)); z-index:5; }
   nav button { flex:1; border:0; border-radius:0; padding:0 4px; color:var(--sub); font-size:14px; }
@@ -122,13 +127,9 @@
     <div class="label">アカウント(複数の端末でデータを共有)</div>
     <div id="acctOut">
       <div class="acct-row">
-        <input id="acU" type="text" placeholder="ユーザー名(半角英小文字・数字)" autocomplete="username" autocapitalize="none" maxlength="20">
-        <input id="acP" type="password" placeholder="パスワード(8文字以上)" autocomplete="current-password" maxlength="100">
-        <input id="acI" type="text" placeholder="招待コード(新規登録のときだけ)" autocomplete="off" autocapitalize="none">
-        <div class="acct-btns">
-          <button id="acLogin" class="primary">ログイン</button>
-          <button id="acSignup">新規登録</button>
-        </div>
+        <input id="acU" type="email" placeholder="メールアドレス" autocomplete="username" autocapitalize="none" inputmode="email" maxlength="100">
+        <input id="acP" type="password" placeholder="パスワード" autocomplete="current-password" maxlength="100">
+        <button id="acLogin" class="primary">ログイン</button>
       </div>
     </div>
     <div id="acctIn" hidden>
@@ -149,6 +150,8 @@
       <input id="importFile" type="file" accept="application/json,.json" hidden>
     </div>
     <p id="bkMsg" class="ok"></p>
+    <p id="bkLast" class="label" style="font-size:12px;margin:0 0 4px"></p>
+    <p id="keepMsg" class="label" style="font-size:12px;margin:0 0 4px"></p>
     <div class="label" style="font-size:12px" id="bkNote">データはこの端末のブラウザ内にだけ保存されます。読み込むと、現在の予定・家計簿・メモは置き換わります。</div>
   </div>
 </section>
@@ -229,16 +232,43 @@
 
 <script>
 (function () {
-  /* GitHub Pagesだけで公開するときは false。自分のサーバー(API)につなぐときだけ true にする。
-     false の間は、アカウント・共有機能は使われず、サーバーへの通信も一切しない(メモもこの端末だけに保存)。 */
-  var HAS_SERVER = false;
+  /* 複数端末で共有するときだけ、Supabase の URL と anon(publishable)キーを入れる。
+     空のままなら、アカウント・共有機能は使われず、サーバーへの通信も一切しない(端末内だけで動く)。
+     service_role / secret キーは絶対に入れないこと。手順は SETUP.md を参照。 */
+  var SUPABASE_URL = 'https://qhcfjvzotvpeuxqkmktx.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_hvUApDVoL2GliRzQzVbtwQ_Hb4G-jdb';
+  var HAS_SERVER = !!(SUPABASE_URL && SUPABASE_KEY);
 
   function $(id) { return document.getElementById(id); }
   function load(k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
   var user = null, dirty = false, applying = false, pushTimer = null, retryTimer = null;
   var SYNC_KEYS = { count: 1, threshold: 1 };
+  var MIRROR = { count: 1, threshold: 1, events: 1, ledger: 1, memos: 1 };
+  /* localStorage が消されたときに備えて、IndexedDB にも同じデータを控えとして保存する */
+  var idb = null;
+  function idbOpen(cb) {
+    try {
+      var r = indexedDB.open('tsutsuki', 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore('kv'); };
+      r.onsuccess = function () { idb = r.result; cb(); };
+      r.onerror = function () { cb(); };
+    } catch (e) { cb(); }
+  }
+  function idbPut(k, v) {
+    if (!idb) return;
+    try { idb.transaction('kv', 'readwrite').objectStore('kv').put(JSON.stringify(v), k); } catch (e) {}
+  }
+  function idbAll(cb) {
+    if (!idb) { cb({}); return; }
+    try {
+      var o = {}, req = idb.transaction('kv').objectStore('kv').openCursor();
+      req.onsuccess = function () { var c = req.result; if (c) { o[c.key] = c.value; c.continue(); } else cb(o); };
+      req.onerror = function () { cb({}); };
+    } catch (e) { cb({}); }
+  }
   function save(k, v) {
     try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {}
+    if (MIRROR[k]) idbPut(k, v);
     if (user && !applying && SYNC_KEYS[k]) markDirty();
   }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -501,6 +531,7 @@
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
     $('bkMsg').className = 'ok'; $('bkMsg').textContent = '書き出しました。';
+    save('lastBackup', ymd(new Date())); renderBackupInfo();
   });
   $('importBtn').addEventListener('click', function () { $('importFile').click(); });
   $('importFile').addEventListener('change', function () {
@@ -595,23 +626,174 @@
   });
 
   /* ---------- account / sync ---------- */
-  function api(method, url, body) {
-    var opt = { method: method, headers: {}, credentials: 'same-origin' };
-    if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
-    return fetch(url, opt).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (j) {
-        if (!r.ok) { var e = new Error(j.error || ('HTTP ' + r.status)); e.status = r.status; e.code = j.error; throw e; }
+  /* sb:start ---------- Supabase(ログイン + データ保存) ---------- */
+  var SB_URL = SUPABASE_URL.replace(/\/+$/, '');
+  var sbSess = load('sbSession', null);
+  var sbRefreshing = null;
+  function apiErr(status, code) { var e = new Error(code || ('HTTP ' + status)); e.status = status; e.code = code; return e; }
+  function nameOf(email) { return String(email || '').split('@')[0]; }
+  function sbSave(s) {
+    sbSess = s;
+    try { if (s) localStorage.setItem('sbSession', JSON.stringify(s)); else localStorage.removeItem('sbSession'); } catch (e) {}
+  }
+  function sbToSess(j) {
+    var prev = sbSess || {};
+    return {
+      access: j.access_token, refresh: j.refresh_token || prev.refresh,
+      exp: Math.floor(Date.now() / 1000) + (Number(j.expires_in) || 3600),
+      uid: (j.user && j.user.id) || prev.uid, email: (j.user && j.user.email) || prev.email
+    };
+  }
+  function sbRaw(path, opt, tok) {
+    opt = opt || {};
+    var h = Object.assign({ apikey: SUPABASE_KEY }, opt.headers || {});
+    if (tok) h.Authorization = 'Bearer ' + tok;
+    if (opt.body !== undefined) h['Content-Type'] = 'application/json';
+    return fetch(SB_URL + path, { method: opt.method || 'GET', headers: h, body: opt.body !== undefined ? JSON.stringify(opt.body) : undefined });
+  }
+  function sbRefresh() {
+    if (!sbSess || !sbSess.refresh) return Promise.reject(apiErr(401, 'unauthorized'));
+    if (sbRefreshing) return sbRefreshing;
+    sbRefreshing = sbRaw('/auth/v1/token?grant_type=refresh_token', { method: 'POST', body: { refresh_token: sbSess.refresh } })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          if (!r.ok || !j.access_token) {
+            if (r.status >= 400 && r.status < 500) sbSave(null);   // 期限切れ・無効 → ログインし直し
+            throw apiErr(r.status >= 500 ? r.status : 401, 'unauthorized');
+          }
+          sbSave(sbToSess(j)); return sbSess;
+        });
+      })
+      .then(function (s) { sbRefreshing = null; return s; }, function (e) { sbRefreshing = null; throw e; });
+    return sbRefreshing;
+  }
+  function sbToken() {
+    if (!sbSess) return Promise.reject(apiErr(401, 'unauthorized'));
+    if (sbSess.exp - 60 > Date.now() / 1000) return Promise.resolve(sbSess.access);
+    return sbRefresh().then(function (s) { return s.access; });
+  }
+  function sbRest(path, opt, retried) {
+    return sbToken().then(function (t) { return sbRaw('/rest/v1' + path, opt, t); }).then(function (r) {
+      if (r.status === 401) {
+        if (retried) throw apiErr(401, 'unauthorized');
+        if (sbSess) sbSess.exp = 0;
+        return sbRest(path, opt, true);
+      }
+      return r.text().then(function (txt) {
+        var j = null; try { j = txt ? JSON.parse(txt) : null; } catch (e) {}
+        if (!r.ok) throw apiErr(r.status, (j && (j.code || j.message)) || ('HTTP ' + r.status));
         return j;
       });
     });
   }
+  function sbAll(table, select, order) {
+    var out = [];
+    function page(off) {
+      return sbRest('/' + table + '?select=' + select + '&order=' + order + '&limit=1000&offset=' + off).then(function (rows) {
+        rows = rows || []; out = out.concat(rows);
+        return rows.length === 1000 ? page(off + 1000) : out;
+      });
+    }
+    return page(0);
+  }
+  function sbShared() {
+    return Promise.all([
+      sbAll('events', 'id,date,time,text,author', 'date.asc,time.asc,created.asc,id.asc'),
+      sbAll('ledger', 'id,date,type,cat,amt,memo,author', 'date.asc,created.asc,id.asc'),
+      sbAll('memos', 'id,text,updated,author', 'updated.desc,id.asc')
+    ]).then(function (r) {
+      var ev = {};
+      r[0].forEach(function (e) { (ev[e.date] = ev[e.date] || []).push({ id: e.id, time: e.time, text: e.text, by: e.author }); });
+      return {
+        events: ev,
+        ledger: r[1].map(function (x) { return { id: x.id, date: x.date, type: x.type, cat: x.cat, amt: x.amt, memo: x.memo, by: x.author }; }),
+        memos: r[2].map(function (m) { return { id: m.id, text: m.text, updated: Number(m.updated), by: m.author }; })
+      };
+    });
+  }
+  var SB_IGN = { Prefer: 'resolution=ignore-duplicates,missing=default,return=minimal' };
+  function sbInsert(table, rows) {
+    var p = Promise.resolve();
+    for (var i = 0; i < rows.length; i += 500) (function (chunk) {
+      p = p.then(function () { return sbRest('/' + table + '?on_conflict=id', { method: 'POST', headers: SB_IGN, body: chunk }); });
+    })(rows.slice(i, i + 500));
+    return p;
+  }
+  var sbReId = /^[a-z0-9]{1,24}$/, sbReDate = /^\d{4}-\d{2}-\d{2}$/, sbReTime = /^([01]\d|2[0-3]):[0-5]\d$/;
+  function sbOkEvent(d, e) { return e && sbReId.test(String(e.id)) && sbReDate.test(String(d)) && typeof e.text === 'string' && e.text.trim().length >= 1 && e.text.length <= 80 && (!e.time || sbReTime.test(e.time)); }
+  function sbOkLedger(x) { return x && sbReId.test(String(x.id)) && sbReDate.test(String(x.date)) && (x.type === 'in' || x.type === 'out') && typeof x.cat === 'string' && x.cat.length >= 1 && x.cat.length <= 20 && Number.isInteger(x.amt) && x.amt >= 1 && x.amt <= 1e9 && (x.memo == null || (typeof x.memo === 'string' && x.memo.length <= 40)); }
+  function sbOkMemo(m) { return m && sbReId.test(String(m.id)) && typeof m.text === 'string' && m.text.trim().length >= 1 && m.text.length <= 2000; }
+  var SB_MIN = { Prefer: 'return=minimal' };
+  function sbWrite(action, b) {
+    var id = encodeURIComponent(String(b.id));
+    switch (action) {
+      case 'event/add': return sbInsert('events', [{ id: b.id, date: b.date, time: b.time || '', text: b.text }]);
+      case 'event/delete': return sbRest('/events?id=eq.' + id, { method: 'DELETE', headers: SB_MIN });
+      case 'ledger/add': return sbInsert('ledger', [{ id: b.id, date: b.date, type: b.type, cat: b.cat, amt: b.amt, memo: b.memo || '' }]);
+      case 'ledger/delete': return sbRest('/ledger?id=eq.' + id, { method: 'DELETE', headers: SB_MIN });
+      case 'memo/add': return sbInsert('memos', [{ id: b.id, text: b.text, updated: b.updated }]);
+      case 'memo/update': return sbRest('/memos?id=eq.' + id, { method: 'PATCH', headers: SB_MIN, body: { text: b.text, updated: b.updated } });
+      case 'memo/delete': return sbRest('/memos?id=eq.' + id, { method: 'DELETE', headers: SB_MIN });
+      case 'merge': {
+        var evs = [], lgs = [], mms = [];
+        var be = (b.events && typeof b.events === 'object') ? b.events : {};
+        Object.keys(be).forEach(function (d) {
+          (Array.isArray(be[d]) ? be[d] : []).forEach(function (e) { if (sbOkEvent(d, e)) evs.push({ id: e.id, date: d, time: e.time || '', text: e.text }); });
+        });
+        (Array.isArray(b.ledger) ? b.ledger : []).forEach(function (x) { if (sbOkLedger(x)) lgs.push({ id: x.id, date: x.date, type: x.type, cat: x.cat, amt: x.amt, memo: x.memo || '' }); });
+        (Array.isArray(b.memos) ? b.memos : []).forEach(function (m) { if (sbOkMemo(m)) mms.push({ id: m.id, text: m.text, updated: Math.floor(Number(m.updated)) || Date.now() }); });
+        return sbInsert('events', evs).then(function () { return sbInsert('ledger', lgs); }).then(function () { return sbInsert('memos', mms); });
+      }
+    }
+    return Promise.reject(apiErr(404, 'not_found'));
+  }
+  function sbLogin(b) {
+    return sbRaw('/auth/v1/token?grant_type=password', { method: 'POST', body: { email: b.username, password: b.password } }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok || !j.access_token) throw apiErr(r.status, r.status === 429 ? 'limited' : r.status >= 500 ? 'server' : 'bad_credentials');
+        sbSave(sbToSess(j)); return { username: nameOf(sbSess.email) };
+      });
+    });
+  }
+  function sbLogout() {
+    var t = sbSess && sbSess.access;
+    sbSave(null);
+    return (t ? sbRaw('/auth/v1/logout', { method: 'POST' }, t).catch(function () {}) : Promise.resolve()).then(function () { return { ok: true }; });
+  }
+  /* 画面側からは、これまで通り api(メソッド, パス, 中身) で呼ぶ。中身はSupabaseへの通信に置き換える。 */
+  function api(method, url, body) {
+    body = body || {};
+    if (!HAS_SERVER) return Promise.reject(apiErr(0, 'no_server'));
+    var m = method + ' ' + url;
+    if (m === 'POST /api/login') return sbLogin(body);
+    if (m === 'POST /api/signup') return Promise.reject(apiErr(400, 'signup_closed'));
+    if (m === 'POST /api/logout') return sbLogout();
+    if (m === 'GET /api/me') return sbToken().then(function () { return { username: nameOf(sbSess.email) }; });
+    if (m === 'GET /api/data') {
+      return sbToken().then(function () {
+        return Promise.all([
+          sbRest('/personal?select=count,threshold&user_id=eq.' + encodeURIComponent(sbSess.uid)).then(function (rows) { return (rows && rows[0]) || {}; }),
+          sbShared()
+        ]);
+      }).then(function (r) { return { personal: r[0], shared: r[1] }; });
+    }
+    if (m === 'PUT /api/personal') {
+      return sbToken().then(function () {
+        return sbRest('/personal?on_conflict=user_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: { user_id: sbSess.uid, count: body.count, threshold: body.threshold } });
+      }).then(function () { return { ok: true }; });
+    }
+    if (url.indexOf('/api/shared/') === 0) {
+      return sbWrite(url.slice(12), body).then(sbShared).then(function (sh) { return { shared: sh }; });
+    }
+    return Promise.reject(apiErr(404, 'not_found'));
+  }
+  /* sb:end */
+
   var ERRORS = {
-    bad_credentials: 'ユーザー名かパスワードが違います。',
-    taken: 'そのユーザー名はすでに使われています。',
-    invite: '招待コードが違います。',
+    bad_credentials: 'メールアドレスかパスワードが違います。',
     limited: '失敗が続いたため、しばらく待ってからやり直してください。',
-    bad_username: 'ユーザー名は半角英小文字・数字・「_」「-」で3〜20文字にしてください。',
-    weak_password: 'パスワードは8文字以上にしてください。'
+    server: 'サーバーが混み合っています。しばらくしてからやり直してください。'
   };
   function acMsg(text, bad) { $('acMsg').textContent = text || ''; $('acMsg').className = bad ? 'err' : 'ok'; }
   function setSync(text, bad) {
@@ -698,17 +880,15 @@
   }
   function auth(kind) {
     var u = $('acU').value.trim().toLowerCase(), p = $('acP').value;
-    if (!u || !p) { acMsg('ユーザー名とパスワードを入力してください。', true); return; }
+    if (!u || !p) { acMsg('メールアドレスとパスワードを入力してください。', true); return; }
     var body = { username: u, password: p };
-    if (kind === 'signup') body.invite = $('acI').value.trim();
     acMsg('');
     api('POST', '/api/' + kind, body).then(function (r) {
-      user = r.username; $('acP').value = ''; $('acI').value = '';
+      user = r.username; $('acP').value = '';
       renderAcct(); return pull(true);
     }).catch(function (e) { acMsg(ERRORS[e.code] || '通信に失敗しました。もう一度お試しください。', true); });
   }
   $('acLogin').addEventListener('click', function () { auth('login'); });
-  $('acSignup').addEventListener('click', function () { auth('signup'); });
   $('acLogout').addEventListener('click', function () {
     push().then(function (ok) {
       if (!ok) { acMsg('同期できないため、ログアウトできません。通信を確認してください。', true); return; }
@@ -726,6 +906,47 @@
       if (e.status === 401) { $('acctBox').hidden = false; renderAcct(); }
     });
   }
+
+  /* ---------- persistence ---------- */
+  function renderBackupInfo() {
+    var lb = load('lastBackup', null);
+    $('bkLast').textContent = lb ? '最終バックアップ: ' + lb
+      : (hasLocalData() ? 'まだバックアップしていません。ときどき「書き出す」で保存しておくと安心です。' : '');
+  }
+  function mirrorAll() {
+    idbPut('count', count); idbPut('threshold', threshold);
+    idbPut('events', events); idbPut('ledger', ledger); idbPut('memos', memos);
+  }
+  function localEmpty() {
+    try { return ['count', 'events', 'ledger', 'memos'].every(function (k) { return localStorage.getItem(k) === null; }); }
+    catch (e) { return false; }
+  }
+  function restoreFromIdb() {
+    idbAll(function (o) {
+      function g(k) { try { return o[k] != null ? JSON.parse(o[k]) : undefined; } catch (e) { return undefined; } }
+      var c = g('count'), t = g('threshold'), ev = g('events'), lg = g('ledger'), mm = g('memos'), any = false;
+      applying = true;
+      if (typeof c === 'number' && c > 0) { count = c; $('count').textContent = String(c); save('count', c); any = true; }
+      if (t >= 2 && t <= 12) { threshold = t; $('th').value = t; $('thv').textContent = t.toFixed(1); save('threshold', t); }
+      if (ev && typeof ev === 'object' && !Array.isArray(ev) && Object.keys(ev).length) { events = ev; save('events', events); any = true; }
+      if (Array.isArray(lg) && lg.length) { ledger = lg; save('ledger', ledger); any = true; }
+      if (Array.isArray(mm) && mm.length) { memos = mm; save('memos', memos); any = true; }
+      applying = false;
+      if (any) { renderCal(); renderBudget(); renderMemo(); toast('ブラウザ側のデータが消えていたため、控えから復元しました。'); }
+      renderBackupInfo(); mirrorAll();
+    });
+  }
+  idbOpen(function () { if (localEmpty()) restoreFromIdb(); else mirrorAll(); });
+  renderBackupInfo();
+  (function () {
+    var k = $('keepMsg');
+    if (!(navigator.storage && navigator.storage.persist)) { k.textContent = 'データは端末内に自動で二重保存されます。'; return; }
+    var show2 = function (ok) {
+      k.textContent = ok ? 'ブラウザにデータの永続保存を許可されています(自動で消されにくい状態)。'
+        : 'データは端末内に二重保存されています。ホーム画面に追加して使うと、さらに消えにくくなります。';
+    };
+    navigator.storage.persisted().then(function (p) { return p ? true : navigator.storage.persist(); }).then(show2).catch(function () { show2(false); });
+  })();
 
   show((location.hash || '').slice(1));
 })();
