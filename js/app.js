@@ -503,12 +503,17 @@
   }
   function albReason(e) {
     if (!e) return '';
-    if (e.code === 'unsupported') return 'この形式の画像は読み込めません(JPEG・PNGなどを選んでください)。';
-    if (e.code === 'too_big') return 'ファイルが大きすぎます(60MBまで)。';
-    if (e.code === 'sync') return '';
-    if (e.status === 413) return 'ファイルが大きすぎます。';
-    if (e.status === 404 || e.status === 403) return 'アルバムの準備ができていません。schema-album.sql を実行したか確認してください。';
-    return '通信を確認してください。';
+    var c = String(e.code || '');
+    if (c === 'unsupported') return 'この形式の画像は読み込めません(JPEG・PNGなどを選んでください)。';
+    if (c === 'too_big') return 'ファイルが大きすぎます(60MBまで)。';
+    if (c === 'sync') return '';
+    var detail = c ? '(詳細: ' + c + ')' : '';
+    if (e.status === 404 || /bucket not found/i.test(c)) return 'アルバムの置き場がまだありません。Supabase で schema-album.sql を実行してください。' + detail;
+    if (e.status === 403 || /row-level security|unauthorized/i.test(c)) return 'アルバムの権限設定ができていません。Supabase で schema-album.sql を実行してください。' + detail;
+    if (e.status === 413 || /too large|exceed/i.test(c)) return 'ファイルが大きすぎます。' + detail;
+    if (e.status === 415 || /mime/i.test(c)) return '画像の形式が受け付けられませんでした。' + detail;
+    if (!e.status) return '通信できませんでした。電波を確認してください。' + (e.message ? '(' + e.message + ')' : '');
+    return '保存できない原因があります。' + detail;
   }
   function addPhotos(files) {
     if (albBusy) return;

@@ -147,7 +147,8 @@
       });
     }).then(function (r) {
       if (r.ok) return;
-      return r.json().catch(function () { return {}; }).then(function (j) { throw apiErr(r.status, j.error || j.message || ('HTTP ' + r.status)); });
+      /* Storage は、権限や置き場の問題も HTTP 400 で返し、本当の番号は本文の statusCode に入れてくる */
+      return r.json().catch(function () { return {}; }).then(function (j) { throw apiErr(Number(j.statusCode) || r.status, j.message || j.error || ('HTTP ' + r.status)); });
     });
   }
   function sbRemoveObjects(id) {
