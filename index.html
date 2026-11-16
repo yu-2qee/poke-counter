@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="ja">
+
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -8,40 +9,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="つつきカウンター">
 <meta name="theme-color" content="#6750a4">
-<<<<<<< HEAD
-<title>砂絵のカウンター</title>
-<style>
-  :root { --fg:#1d1b20; --sub:#79747e; --bg:#fef7ff; --accent:#6750a4; --track:#e6e0e9; }
-  @media (prefers-color-scheme: dark) {
-    :root { --fg:#e6e0e9; --sub:#938f99; --bg:#141218; --accent:#d0bcff; --track:#36343b; }
-  }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
-    font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
-  main { min-height:100%; display:flex; flex-direction:column; align-items:center;
-    justify-content:center; padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); gap:20px; text-align:center; }
-  #count { font-size:112px; font-weight:700; line-height:1; transition: transform .22s ease-out; }
-  #count.pulse { transform: scale(1.15); }
-  .hint { color:var(--sub); font-size:15px; margin:0; }
-  .box { width:100%; max-width:340px; text-align:left; }
-  .label { font-size:13px; color:var(--sub); margin-bottom:6px; }
-  .meter { height:10px; border-radius:6px; background:var(--track); overflow:hidden; }
-  #bar { height:100%; width:0; background:#f59e0b; border-radius:6px; }
-  #bar.cool { background:var(--accent); }
-  input[type=range] { width:100%; accent-color:var(--accent); }
-  button { font:inherit; font-size:16px; padding:12px 20px; border-radius:24px; border:1px solid var(--sub);
-    background:transparent; color:var(--fg); }
-  button.primary { background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:600; }
-  #msg { color:#d9534f; font-size:14px; min-height:20px; margin:0; }
-</style>
-=======
 <title>つつきカウンター</title>
 <meta name="description" content="スマホを指で突くとカウントが増える。予定・家計簿・メモつき。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="stylesheet" href="css/style.css">
->>>>>>> 4119f0b7860bf575ba20417be11ea152147fa83a
 </head>
 <body class="booting">
 
