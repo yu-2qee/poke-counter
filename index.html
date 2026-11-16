@@ -2,10 +2,13 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="つつきカウンター">
 <meta name="theme-color" content="#6750a4">
+<<<<<<< HEAD
 <title>砂絵のカウンター</title>
 <style>
   :root { --fg:#1d1b20; --sub:#79747e; --bg:#fef7ff; --accent:#6750a4; --track:#e6e0e9; }
@@ -31,11 +34,37 @@
   button.primary { background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:600; }
   #msg { color:#d9534f; font-size:14px; min-height:20px; margin:0; }
 </style>
+=======
+<title>つつきカウンター</title>
+<meta name="description" content="スマホを指で突くとカウントが増える。予定・家計簿・メモつき。">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="css/style.css">
+>>>>>>> 4119f0b7860bf575ba20417be11ea152147fa83a
 </head>
-<body>
-<main>
+<body class="booting">
+
+<section class="view" id="view-login" aria-label="ログイン">
+  <form class="login" id="loginForm" novalidate>
+    <img class="login-icon" src="icons/icon-192.png" width="72" height="72" alt="">
+    <h1 class="login-title">つつきカウンター</h1>
+    <p class="hint">ログインすると、予定・家計簿・メモ・アルバムを共有できます。</p>
+    <div class="login-fields">
+      <label class="label" for="acU">メールアドレス</label>
+      <input id="acU" type="email" autocomplete="username" autocapitalize="none" inputmode="email" maxlength="100">
+      <label class="label" for="acP">パスワード</label>
+      <input id="acP" type="password" autocomplete="current-password" maxlength="100">
+    </div>
+    <button id="acLogin" class="primary login-btn" type="submit">ログイン</button>
+    <p id="acMsg" class="err" role="alert"></p>
+    <p class="label" style="font-size:12px">アカウントは管理者が作成します。</p>
+  </form>
+</section>
+
+<section class="view active" id="view-counter">
   <div id="count">0</div>
-  <p class="hint">スマホの上部でトントンと突いてね</p>
+  <p class="hint">スマホの上部を指でトントンと突いてね</p>
   <button id="start" class="primary">センサーを許可して開始</button>
   <p id="msg"></p>
 
@@ -51,89 +80,142 @@
   </div>
 
   <button id="reset">リセット</button>
-  <a href="" target="_blank" rel="noopener">エサ
-  </a>
-</main>
 
-<script>
-(function () {
-  var count = 0, threshold = 6, cooling = false, running = false;
-  var COOLDOWN_MS = 350, DEG2RAD = Math.PI / 180;
+  <div class="box" id="acctBox" hidden style="border-top:1px solid var(--line);padding-top:14px">
+    <div class="label">アカウント</div>
+    <div class="row" style="justify-content:space-between">
+      <span><strong id="acName"></strong> でログイン中</span>
+      <button id="acLogout" class="small" type="button">ログアウト</button>
+    </div>
+    <p id="acOutMsg" class="err"></p>
+    <p id="syncMsg" class="sync" hidden></p>
+  </div>
 
-  var elCount = document.getElementById('count');
-  var elStart = document.getElementById('start');
-  var elMsg = document.getElementById('msg');
-  var elMag = document.getElementById('mag');
-  var elBar = document.getElementById('bar');
-  var elTh = document.getElementById('th');
-  var elThv = document.getElementById('thv');
+  <div class="box" style="border-top:1px solid var(--line);padding-top:14px">
+    <div class="label">バックアップ(予定・家計簿・メモ・設定)</div>
+    <div class="row">
+      <button id="export" class="small">書き出す</button>
+      <button id="importBtn" class="small">読み込む</button>
+      <input id="importFile" type="file" accept="application/json,.json" hidden>
+    </div>
+    <p id="bkMsg" class="ok"></p>
+    <p id="bkLast" class="label" style="font-size:12px;margin:0 0 4px"></p>
+    <p id="keepMsg" class="label" style="font-size:12px;margin:0 0 4px"></p>
+    <div class="label" style="font-size:12px" id="bkNote">データはこの端末のブラウザ内にだけ保存されます。読み込むと、現在の予定・家計簿・メモは置き換わります。</div>
+  </div>
+</section>
 
-  try {
-    var saved = parseFloat(localStorage.getItem('threshold'));
-    if (saved >= 2 && saved <= 12) { threshold = saved; elTh.value = saved; elThv.textContent = saved.toFixed(1); }
-  } catch (e) {}
+<section class="view" id="view-calendar">
+  <h1>カレンダー</h1>
+  <div class="head">
+    <button id="calPrev" class="small" aria-label="前の月">前の月</button>
+    <strong id="calTitle"></strong>
+    <button id="calNext" class="small" aria-label="次の月">次の月</button>
+  </div>
+  <div class="grid" id="calGrid"></div>
+  <p class="legend">● 予定あり ・ ■ 家計簿の記録あり</p>
+  <div class="head"><strong id="dayTitle" style="font-size:16px"></strong><button id="calToday" class="small">今日</button></div>
+  <ul class="list" id="dayList"></ul>
+  <div class="head"><strong style="font-size:16px">この日の家計簿</strong><span id="dayMoneySum" class="legend" style="width:auto;text-align:right"></span></div>
+  <ul class="list" id="dayLedger"></ul>
+  <button id="calToBudget" class="small">この日の家計簿を追加</button>
+  <div class="form">
+    <div class="form2">
+      <div><div class="label">時刻(任意)</div><input id="evTime" type="time"></div>
+      <div><div class="label">予定</div><input id="evText" type="text" maxlength="80" placeholder="歯医者、飲み会など" autocomplete="off"></div>
+    </div>
+    <button id="evAdd" class="primary">予定を追加</button>
+    <p id="evErr" class="err"></p>
+  </div>
+</section>
 
-  elTh.addEventListener('input', function () {
-    threshold = parseFloat(elTh.value);
-    elThv.textContent = threshold.toFixed(1);
-    try { localStorage.setItem('threshold', String(threshold)); } catch (e) {}
-  });
+<section class="view" id="view-budget">
+  <h1>家計簿</h1>
+  <div class="head">
+    <button id="bdPrev" class="small" aria-label="前の月">前の月</button>
+    <strong id="bdTitle"></strong>
+    <button id="bdNext" class="small" aria-label="次の月">次の月</button>
+  </div>
+  <div class="sums">
+    <div class="sum"><div class="v" id="sumIn" style="color:var(--inc)">0</div><div class="k">収入</div></div>
+    <div class="sum"><div class="v" id="sumOut" style="color:var(--exp)">0</div><div class="k">支出</div></div>
+    <div class="sum"><div class="v" id="sumBal">0</div><div class="k">差引</div></div>
+  </div>
+  <div class="cats" id="cats"></div>
+  <div class="form">
+    <div class="form2">
+      <div><div class="label">日付</div><input id="bdDate" type="date"></div>
+      <div><div class="label">種類</div><select id="bdType"><option value="out">支出</option><option value="in">収入</option></select></div>
+      <div><div class="label">カテゴリ</div><select id="bdCat"></select></div>
+      <div><div class="label">金額(円)</div><input id="bdAmt" type="number" inputmode="numeric" min="1" step="1" placeholder="1200"></div>
+    </div>
+    <div><div class="label">メモ(任意)</div><input id="bdMemo" type="text" maxlength="40" autocomplete="off"></div>
+    <button id="bdAdd" class="primary">記録する</button>
+    <p id="bdErr" class="err"></p>
+  </div>
+  <ul class="list" id="bdList"></ul>
+</section>
 
-  document.getElementById('reset').addEventListener('click', function () {
-    count = 0; elCount.textContent = '0';
-  });
+<section class="view" id="view-memo">
+  <h1>共有メモ</h1>
+  <p class="memo-note" id="memoNote"></p>
+  <div class="form">
+    <textarea id="memoIn" maxlength="2000" placeholder="買い物リスト、連絡事項など" aria-label="メモ"></textarea>
+    <div class="row">
+      <button id="memoSave" class="primary" style="flex:1">メモを追加</button>
+      <button id="memoCancel" class="small" type="button" hidden>キャンセル</button>
+    </div>
+    <p id="memoErr" class="err"></p>
+  </div>
+  <ul class="list" id="memoList"></ul>
+</section>
 
-  function poke() {
-    count++;
-    cooling = true;
-    elCount.textContent = String(count);
-    elCount.classList.add('pulse');
-    setTimeout(function () { elCount.classList.remove('pulse'); }, 220);
-    elBar.classList.add('cool');
-    if (navigator.vibrate) navigator.vibrate(30);
-    setTimeout(function () { cooling = false; elBar.classList.remove('cool'); }, COOLDOWN_MS);
-  }
+<section class="view" id="view-album">
+  <h1>アルバム</h1>
+  <p class="memo-note">写真は縮小してから保存されます。ログインしている全員で共有します。</p>
+  <div class="form">
+    <button id="albAdd" class="primary" type="button">写真を追加</button>
+    <input id="albFile" type="file" accept="image/*" multiple hidden>
+    <p id="albMsg" class="err" role="status"></p>
+  </div>
+  <div id="albGrid" class="alb"></div>
+  <button id="albMore" class="small" type="button" hidden>もっと見る</button>
+</section>
 
-  var gotData = false;
-  function onMotion(e) {
-    var r = e.rotationRate;
-    if (!r || r.alpha == null) return;
-    gotData = true;
-    var x = (r.beta || 0) * DEG2RAD, y = (r.gamma || 0) * DEG2RAD, z = (r.alpha || 0) * DEG2RAD;
-    var mag = Math.sqrt(x * x + y * y + z * z);
-    elMag.textContent = '現在の角速度: ' + mag.toFixed(1) + ' rad/s';
-    elBar.style.width = Math.min(100, (mag / (threshold * 1.5)) * 100) + '%';
-    if (mag > threshold && !cooling) poke();
-  }
+<div id="viewer" class="viewer" role="dialog" aria-modal="true" aria-label="写真" hidden>
+  <div class="v-top">
+    <button id="vClose" class="small" type="button">閉じる</button>
+    <span id="vPos" class="v-pos"></span>
+    <button id="vDel" class="small" type="button">削除</button>
+  </div>
+  <div class="v-stage" id="vStage">
+    <button id="vPrev" class="v-nav" type="button" aria-label="前の写真">‹</button>
+    <img id="vImg" alt="">
+    <button id="vNext" class="v-nav" type="button" aria-label="次の写真">›</button>
+  </div>
+  <div class="v-info">
+    <div class="form2">
+      <div><div class="label">日付</div><input id="vDate" type="date"></div>
+      <div><div class="label">追加した人</div><div id="vBy" class="v-by"></div></div>
+    </div>
+    <input id="vCap" type="text" maxlength="100" placeholder="コメント(任意)" autocomplete="off" aria-label="コメント">
+    <button id="vSave" class="primary" type="button">保存</button>
+    <p id="vErr" class="err"></p>
+  </div>
+</div>
 
-  function begin() {
-    window.addEventListener('devicemotion', onMotion);
-    running = true;
-    elStart.style.display = 'none';
-    elMsg.textContent = '';
-    setTimeout(function () {
-      if (!gotData) elMsg.textContent = 'センサーの値が届きません。HTTPSで開いているか、端末のモーションセンサー設定を確認してください。';
-    }, 2500);
-  }
+<div id="toast" role="status" hidden></div>
 
-  elStart.addEventListener('click', function () {
-    if (running) return;
-    if (typeof DeviceMotionEvent === 'undefined') {
-      elMsg.textContent = 'このブラウザはモーションセンサーに対応していません。';
-      return;
-    }
-    if (typeof DeviceMotionEvent.requestPermission === 'function') {
-      DeviceMotionEvent.requestPermission().then(function (s) {
-        if (s === 'granted') begin();
-        else elMsg.textContent = '許可されませんでした。Safariを一度閉じて開き直し、もう一度お試しください。';
-      }).catch(function (err) {
-        elMsg.textContent = '許可の取得に失敗しました: ' + err;
-      });
-    } else {
-      begin();
-    }
-  });
-})();
-</script>
+<nav aria-label="メニュー">
+  <button id="tab-counter" class="on" type="button">カウンター</button>
+  <button id="tab-calendar" type="button">カレンダー</button>
+  <button id="tab-budget" type="button">家計簿</button>
+  <button id="tab-memo" type="button">メモ</button>
+  <button id="tab-album" type="button" hidden>アルバム</button>
+</nav>
+
+<script src="js/config.js"></script>
+<script src="js/supabase.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>
